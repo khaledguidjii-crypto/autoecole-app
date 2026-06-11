@@ -6,23 +6,45 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 import requests
 
+# Charger les variables d'environnement au début
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+# Initialisation de Supabase à l'intérieur des fonctions ou avec une fonction factory
+def init_supabase():
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_ANON_KEY")
+    if not url or not key:
+        raise ValueError("Les variables d'environnement SUPABASE_URL et SUPABASE_ANON_KEY doivent être définies")
+    return create_client(url, key)
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+def init_supabase_admin():
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_KEY")
+    if not url or not key:
+        raise ValueError("La variable d'environnement SUPABASE_SERVICE_KEY doit être définie")
+    return create_client(url, key)
+
+# Fonctions d'accès à la base de données avec initialisation tardive
+def get_supabase():
+    if not hasattr(app, 'supabase_client'):
+        app.supabase_client = init_supabase()
+    return app.supabase_client
+
+def get_supabase_admin():
+    if not hasattr(app, 'supabase_admin_client'):
+        app.supabase_admin_client = init_supabase_admin()
+    return app.supabase_admin_client
 
 def get_all_candidats():
+    supabase = get_supabase()
     response = supabase.table("candidats").select("*").order("created_at", desc=True).execute()
     return response.data
 
 def get_candidat_by_id(candidat_id):
+    supabase = get_supabase()
     response = supabase.table("candidats").select("*").eq("id", candidat_id).execute()
     return response.data[0] if response.data else None
 
@@ -39,9 +61,11 @@ def login():
         email = request.form["email"]
         password = request.form["password"]
         try:
-            url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
+            supabase_url = os.environ.get("SUPABASE_URL")
+            supabase_key = os.environ.get("SUPABASE_ANON_KEY")
+            url = f"{supabase_url}/auth/v1/token?grant_type=password"
             payload = {"email": email, "password": password}
-            headers = {"apikey": SUPABASE_ANON_KEY}
+            headers = {"apikey": supabase_key, "Content-Type": "application/json"}
             resp = requests.post(url, json=payload, headers=headers)
             if resp.status_code == 200:
                 session["user"] = resp.json()["user"]
@@ -78,6 +102,7 @@ def add_candidat():
                 if len(file_bytes) > 5_000_000:
                     flash("La photo ne doit pas dépasser 5 Mo.")
                     return redirect(url_for("add_candidat"))
+                supabase_admin = get_supabase_admin()
                 supabase_admin.storage.from_("photos_candidats").upload(
                     filename,
                     file_bytes,
@@ -93,6 +118,7 @@ def add_candidat():
             "versement": versement,
             "photo_url": photo_url,
         }
+        supabase = get_supabase()
         supabase.table("candidats").insert(data).execute()
         flash("Candidat ajouté")
         return redirect(url_for("index"))
@@ -134,6 +160,7 @@ def edit_candidat(candidat_id):
                 if len(file_bytes) > 5_000_000:
                     flash("La photo ne doit pas dépasser 5 Mo.")
                     return redirect(url_for("edit_candidat", candidat_id=candidat_id))
+                supabase_admin = get_supabase_admin()
                 supabase_admin.storage.from_("photos_candidats").upload(
                     filename,
                     file_bytes,
@@ -150,6 +177,7 @@ def edit_candidat(candidat_id):
             "photo_url": photo_url,
             "updated_at": datetime.now().isoformat(),
         }
+        supabase = get_supabase()
         supabase.table("candidats").update(data).eq("id", candidat_id).execute()
         flash("Modifié")
         return redirect(url_for("candidat_detail", candidat_id=candidat_id))
@@ -160,9 +188,10 @@ def edit_candidat(candidat_id):
 def delete_candidat(candidat_id):
     if "user" not in session:
         return redirect(url_for("login"))
+    supabase = get_supabase()
     supabase.table("candidats").delete().eq("id", candidat_id).execute()
     flash("Supprimé")
     return redirect(url_for("index"))
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=10000)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
