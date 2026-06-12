@@ -8,27 +8,30 @@ import requests
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
+# Lire les variables d'environnement
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 
-if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-    raise Exception("SUPABASE_URL et SUPABASE_SERVICE_KEY doivent être définies")
+if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+    raise Exception("Variables d'environnement SUPABASE_URL et SUPABASE_ANON_KEY manquantes")
 
-# Utiliser la clé service_role pour tout (client admin)
+# Créer les clients Supabase
+supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-# Créer une session automatique (pas de login)
+# Créer automatiquement une session utilisateur (pas besoin de login)
 @app.before_request
 def auto_login():
     if "user" not in session:
         session["user"] = {"email": "auto@ecole.com", "id": "auto"}
 
 def get_all_candidats():
-    response = supabase_admin.table("candidats").select("*").order("created_at", desc=True).execute()
+    response = supabase.table("candidats").select("*").order("created_at", desc=True).execute()
     return response.data
 
 def get_candidat_by_id(candidat_id):
-    response = supabase_admin.table("candidats").select("*").eq("id", candidat_id).execute()
+    response = supabase.table("candidats").select("*").eq("id", candidat_id).execute()
     return response.data[0] if response.data else None
 
 @app.route("/")
@@ -68,7 +71,7 @@ def add_candidat():
             "versement": versement,
             "photo_url": photo_url,
         }
-        supabase_admin.table("candidats").insert(data).execute()
+        supabase.table("candidats").insert(data).execute()
         flash("Candidat ajouté")
         return redirect(url_for("index"))
     return render_template("add_candidat.html")
@@ -119,7 +122,7 @@ def edit_candidat(candidat_id):
             "photo_url": photo_url,
             "updated_at": datetime.now().isoformat(),
         }
-        supabase_admin.table("candidats").update(data).eq("id", candidat_id).execute()
+        supabase.table("candidats").update(data).eq("id", candidat_id).execute()
         flash("Modifié")
         return redirect(url_for("candidat_detail", candidat_id=candidat_id))
     
@@ -127,7 +130,7 @@ def edit_candidat(candidat_id):
 
 @app.route("/delete/<candidat_id>")
 def delete_candidat(candidat_id):
-    supabase_admin.table("candidats").delete().eq("id", candidat_id).execute()
+    supabase.table("candidats").delete().eq("id", candidat_id).execute()
     flash("Supprimé")
     return redirect(url_for("index"))
 
