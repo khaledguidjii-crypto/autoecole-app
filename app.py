@@ -3,7 +3,6 @@ import uuid
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from supabase import create_client
-import requests
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
@@ -11,16 +10,14 @@ app.secret_key = os.urandom(24)
 # Lire les variables d'environnement
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
-SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_ANON_KEY:
     raise Exception("Variables d'environnement SUPABASE_URL et SUPABASE_ANON_KEY manquantes")
 
-# Créer les clients Supabase
+# Client unique avec la clé anon
 supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-# Créer automatiquement une session utilisateur (pas besoin de login)
+# Auto-login (pas de mot de passe)
 @app.before_request
 def auto_login():
     if "user" not in session:
@@ -58,10 +55,10 @@ def add_candidat():
                 if len(file_bytes) > 5_000_000:
                     flash("Photo trop grande (max 5 Mo)")
                     return redirect(url_for("add_candidat"))
-                supabase_admin.storage.from_("photos_candidats").upload(
+                supabase.storage.from_("photos_candidats").upload(
                     filename, file_bytes, {"content-type": file.mimetype or "image/jpeg"}
                 )
-                photo_url = supabase_admin.storage.from_("photos_candidats").get_public_url(filename)
+                photo_url = supabase.storage.from_("photos_candidats").get_public_url(filename)
         
         data = {
             "nom": nom,
@@ -108,10 +105,10 @@ def edit_candidat(candidat_id):
                 if len(file_bytes) > 5_000_000:
                     flash("Photo trop grande (max 5 Mo)")
                     return redirect(url_for("edit_candidat", candidat_id=candidat_id))
-                supabase_admin.storage.from_("photos_candidats").upload(
+                supabase.storage.from_("photos_candidats").upload(
                     filename, file_bytes, {"content-type": file.mimetype or "image/jpeg"}
                 )
-                photo_url = supabase_admin.storage.from_("photos_candidats").get_public_url(filename)
+                photo_url = supabase.storage.from_("photos_candidats").get_public_url(filename)
         
         data = {
             "nom": nom,
