@@ -1,27 +1,21 @@
 import os
 import uuid
 from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash
 from supabase import create_client
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# Lire les variables d'environnement
+# Ces valeurs seront remplacées par celles configurées sur Render
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
 
 if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-    raise Exception("Variables d'environnement SUPABASE_URL et SUPABASE_ANON_KEY manquantes")
+    raise Exception("Les variables d'environnement SUPABASE_URL et SUPABASE_ANON_KEY ne sont pas définies.")
 
-# Client unique avec la clé anon
+# Client unique avec la nouvelle clé publishable
 supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-
-# Auto-login (pas de mot de passe)
-@app.before_request
-def auto_login():
-    if "user" not in session:
-        session["user"] = {"email": "auto@ecole.com", "id": "auto"}
 
 def get_all_candidats():
     response = supabase.table("candidats").select("*").order("created_at", desc=True).execute()
@@ -31,6 +25,8 @@ def get_candidat_by_id(candidat_id):
     response = supabase.table("candidats").select("*").eq("id", candidat_id).execute()
     return response.data[0] if response.data else None
 
+# =============== Routes ===============
+
 @app.route("/")
 def index():
     candidats = get_all_candidats()
@@ -39,13 +35,14 @@ def index():
 @app.route("/add", methods=["GET", "POST"])
 def add_candidat():
     if request.method == "POST":
+        # Gestion des champs du formulaire
         nom = request.form["nom"]
         telephone = request.form["telephone"]
         phase = request.form["phase"]
         tarif = float(request.form["tarif"])
         versement = float(request.form["versement"])
         photo_url = None
-        
+
         if "photo" in request.files:
             file = request.files["photo"]
             if file and file.filename:
@@ -53,13 +50,13 @@ def add_candidat():
                 filename = f"{uuid.uuid4()}.{ext}"
                 file_bytes = file.read()
                 if len(file_bytes) > 5_000_000:
-                    flash("Photo trop grande (max 5 Mo)")
+                    flash("La photo ne doit pas dépasser 5 Mo.")
                     return redirect(url_for("add_candidat"))
                 supabase.storage.from_("photos_candidats").upload(
                     filename, file_bytes, {"content-type": file.mimetype or "image/jpeg"}
                 )
                 photo_url = supabase.storage.from_("photos_candidats").get_public_url(filename)
-        
+
         data = {
             "nom": nom,
             "telephone": telephone,
@@ -87,7 +84,7 @@ def edit_candidat(candidat_id):
     if not candidat:
         flash("Candidat introuvable")
         return redirect(url_for("index"))
-    
+
     if request.method == "POST":
         nom = request.form["nom"]
         telephone = request.form["telephone"]
@@ -95,7 +92,7 @@ def edit_candidat(candidat_id):
         tarif = float(request.form["tarif"])
         versement = float(request.form["versement"])
         photo_url = candidat["photo_url"]
-        
+
         if "photo" in request.files:
             file = request.files["photo"]
             if file and file.filename:
@@ -103,13 +100,13 @@ def edit_candidat(candidat_id):
                 filename = f"{uuid.uuid4()}.{ext}"
                 file_bytes = file.read()
                 if len(file_bytes) > 5_000_000:
-                    flash("Photo trop grande (max 5 Mo)")
+                    flash("La photo ne doit pas dépasser 5 Mo.")
                     return redirect(url_for("edit_candidat", candidat_id=candidat_id))
                 supabase.storage.from_("photos_candidats").upload(
                     filename, file_bytes, {"content-type": file.mimetype or "image/jpeg"}
                 )
                 photo_url = supabase.storage.from_("photos_candidats").get_public_url(filename)
-        
+
         data = {
             "nom": nom,
             "telephone": telephone,
@@ -122,7 +119,7 @@ def edit_candidat(candidat_id):
         supabase.table("candidats").update(data).eq("id", candidat_id).execute()
         flash("Modifié")
         return redirect(url_for("candidat_detail", candidat_id=candidat_id))
-    
+
     return render_template("add_candidat.html", candidat=candidat)
 
 @app.route("/delete/<candidat_id>")
